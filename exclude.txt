@@ -1,0 +1,2 @@
+# One repo name per line (exact match, e.g. "meadow-world").
+# Anything listed here is skipped entirely by daily-maintenance.sh.
