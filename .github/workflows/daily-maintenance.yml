@@ -2,7 +2,7 @@ name: Daily Repo Maintenance
 
 on:
   schedule:
-    # 03:00 UTC = 08:30 IST. Adjust to taste.
+    # 03:00 UTC = 08:30 IST
     - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
@@ -14,9 +14,13 @@ on:
 jobs:
   maintain:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+
     steps:
       - name: Checkout automation repo
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -30,16 +34,76 @@ jobs:
 
       - name: Install helper tools
         run: |
+          # Lint & Format
           npm install -g eslint prettier
           pip install black --quiet
 
-      - name: Install GitHub CLI
+          # Security
+          pip install pip-audit --quiet
+
+          # Code Quality
+          pip install autoflake mypy --quiet
+
+          # YAML parsing for per-repo config
+          pip install pyyaml --quiet
+
+      - name: Install CLI tools
         run: |
+          # GitHub CLI (usually pre-installed on ubuntu-latest)
           type -p gh >/dev/null || (sudo apt-get update && sudo apt-get install -y gh)
+
+          # gitleaks — secret scanner
+          GITLEAKS_VERSION="8.18.4"
+          wget -qO- "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar xz -C /usr/local/bin gitleaks
+
+          # hadolint — Dockerfile linter
+          HADOLINT_VERSION="2.12.0"
+          sudo wget -qO /usr/local/bin/hadolint \
+            "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-Linux-x86_64"
+          sudo chmod +x /usr/local/bin/hadolint
+
+          # lychee — broken link checker
+          LYCHEE_VERSION="0.15.1"
+          wget -qO- "https://github.com/lycheeverse/lychee/releases/download/v${LYCHEE_VERSION}/lychee-v${LYCHEE_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | sudo tar xz -C /usr/local/bin lychee
+
+          # yq — YAML processor
+          YQ_VERSION="4.44.2"
+          sudo wget -qO /usr/local/bin/yq \
+            "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Make scripts executable
+        run: chmod +x daily-maintenance.sh modules/*.sh lib/*.sh 2>/dev/null || true
 
       - name: Run daily maintenance
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
           GH_USER: ${{ secrets.GH_USERNAME }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: bash daily-maintenance.sh
+
+      - name: Commit reports (if any)
+        if: always()
+        run: |
+          cd ${{ github.workspace }}
+          git config user.name "daily-maintenance-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add reports/ stats/ || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: daily reports $(date -u +'%Y-%m-%d')"
+            git push
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+        run: |
+          if [[ -n "${WEBHOOK_URL:-}" ]]; then
+            curl -sfS -H "Content-Type: application/json" \
+              -d '{"content":"⚠️ Daily maintenance workflow FAILED. Check: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}","text":"⚠️ Daily maintenance workflow FAILED. Check: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
+              "$WEBHOOK_URL" || true
+          fi

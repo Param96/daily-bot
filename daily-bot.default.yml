@@ -1,0 +1,34 @@
+# daily-bot.default.yml
+# Default configuration for daily-bot modules.
+# Repos can override any key by placing a .daily-bot.yml in their root.
+
+lint:
+  enabled: true
+  eslint: true
+  prettier: true
+  black: true
+
+security:
+  enabled: true
+  npm_audit: true
+  pip_audit: true
+  gitleaks: true
+  license_check: true
+
+hygiene:
+  enabled: true
+  stale_branches: true
+  stale_branch_days: 90
+  stale_issues: true
+  stale_issue_days: 30
+  readme_check: true
+  broken_links: true
+
+quality:
+  enabled: true
+  autoflake: true
+  ts_prune: true
+  mypy: false
+  tsc: false
+  hadolint: true
+  yaml_lint: true
