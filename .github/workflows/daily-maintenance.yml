@@ -42,4 +42,4 @@ jobs:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
           GH_USER: ${{ secrets.GH_USERNAME }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
-        run: bash scripts/daily-maintenance.sh
+        run: bash daily-maintenance.sh
