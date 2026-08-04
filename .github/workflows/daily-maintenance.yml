@@ -14,7 +14,7 @@ on:
 jobs:
   maintain:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
       - name: Checkout automation repo
@@ -32,20 +32,21 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install helper tools
+      - name: Install Python tools
         run: |
-          # Lint & Format
+          pip install --quiet \
+            black \
+            pip-audit \
+            autoflake \
+            mypy \
+            pytest \
+            pyyaml \
+            vulture \
+            radon
+
+      - name: Install Node tools
+        run: |
           npm install -g eslint prettier
-          pip install black --quiet
-
-          # Security
-          pip install pip-audit --quiet
-
-          # Code Quality
-          pip install autoflake mypy --quiet
-
-          # YAML parsing for per-repo config
-          pip install pyyaml --quiet
 
       - name: Install CLI tools
         run: |
@@ -73,6 +74,14 @@ jobs:
           sudo wget -qO /usr/local/bin/yq \
             "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64"
           sudo chmod +x /usr/local/bin/yq
+
+          # trivy — vulnerability scanner for containers and filesystems
+          TRIVY_VERSION="0.52.0"
+          wget -qO- "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            | sudo tar xz -C /usr/local/bin trivy
+
+          # syft — SBOM generator
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
 
       - name: Make scripts executable
         run: chmod +x daily-maintenance.sh modules/*.sh lib/*.sh 2>/dev/null || true

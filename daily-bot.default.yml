@@ -1,34 +1,113 @@
 # daily-bot.default.yml
 # Default configuration for daily-bot modules.
 # Repos can override any key by placing a .daily-bot.yml in their root.
+#
+# Convention:
+#   - "true"  for read-only/reporting features (safe, default on)
+#   - "false" for anything that writes/commits/pushes (off by default)
+#   - Individual toggles give fine-grained control per feature
 
+# ─────────────────────────────────────────────
+# Lint & Formatting  (safe auto-fix, direct commit)
+# ─────────────────────────────────────────────
 lint:
   enabled: true
-  eslint: true
-  prettier: true
-  black: true
+  eslint: true                  # Run ESLint --fix on JS/TS files
+  prettier: true                # Run Prettier --write on supported files
+  black: true                   # Run Black on Python files
 
+# ─────────────────────────────────────────────
+# Security Checks
+# ─────────────────────────────────────────────
 security:
   enabled: true
-  npm_audit: true
-  pip_audit: true
-  gitleaks: true
-  license_check: true
+  npm_audit: true               # npm audit fix --force
+  npm_audit_pr_mode: true       # Open PR instead of direct-commit for npm audit fixes
+  pip_audit: true               # pip-audit scan
+  gitleaks: true                # Scan for leaked secrets
+  license_check: true           # Verify LICENSE file exists
+  trivy: true                   # Trivy filesystem scan for HIGH/CRITICAL vulns (Dockerfile only)
+  sbom: false                   # Generate SBOM via syft (CycloneDX JSON)  [writes file]
+  secret_rotation: true         # Check secrets-manifest.yml for stale secrets
+  max_secret_age_days: 90       # Max days before flagging a secret as stale
 
+# ─────────────────────────────────────────────
+# Repository Hygiene
+# ─────────────────────────────────────────────
 hygiene:
   enabled: true
-  stale_branches: true
-  stale_branch_days: 90
-  stale_issues: true
-  stale_issue_days: 30
-  readme_check: true
-  broken_links: true
+  stale_branches: true          # Delete merged/stale remote branches
+  stale_branch_days: 90         # Threshold in days for stale branches
+  stale_issues: true            # Label stale issues/PRs
+  stale_issue_days: 30          # Threshold in days for stale issues
+  readme_check: true            # Verify README exists
+  broken_links: true            # Check for broken links in markdown (lychee)
+  branch_protection: true       # Audit branch protection rules against baseline
+  orphaned_repos: true          # Flag repos with no commits in N months (report-only)
+  orphan_months: 6              # Inactivity threshold in months
 
+# ─────────────────────────────────────────────
+# Code Quality Analysis
+# ─────────────────────────────────────────────
 quality:
   enabled: true
-  autoflake: true
-  ts_prune: true
-  mypy: false
-  tsc: false
-  hadolint: true
-  yaml_lint: true
+  autoflake: true               # Remove unused imports/variables (Python)
+  autoflake_pr_mode: true       # Open PR instead of direct-commit for autoflake
+  ts_prune: true                # Find unused exports in TypeScript
+  mypy: false                   # Run mypy type checks
+  tsc: false                    # Run TypeScript compiler checks
+  hadolint: true                # Lint Dockerfiles
+  yaml_lint: true               # Validate YAML files
+  depcheck: false               # Detect unused npm dependencies (npx depcheck)   [off: can be slow]
+  vulture: false                # Detect dead Python code (vulture)                [off: can be noisy]
+  radon: false                  # Python cyclomatic complexity analysis (radon)    [off: advisory only]
+  jscpd: false                  # Cross-language code duplication detection (jscpd) [off: can be slow]
+
+# ─────────────────────────────────────────────
+# Dependency Updates  (writes PRs)
+# ─────────────────────────────────────────────
+dependencies:
+  enabled: false                # Master toggle [default off — opens PRs]
+  npm_update: true              # Check for outdated npm packages
+  pip_update: true              # Check for outdated pip packages
+
+# ─────────────────────────────────────────────
+# Rollback  (auto-revert bot commits that break CI)
+# ─────────────────────────────────────────────
+rollback:
+  enabled: true
+
+# ─────────────────────────────────────────────
+# Test & Build Gate  (validate repo after auto-fixes)
+# ─────────────────────────────────────────────
+testing:
+  enabled: true
+  npm_build: true               # Run npm run build after fixes
+  npm_test: true                # Run npm test after fixes
+  pytest: true                  # Run pytest after fixes
+
+# ─────────────────────────────────────────────
+# Reporting & Stats
+# ─────────────────────────────────────────────
+reporting:
+  enabled: true
+  collect_stats: true           # Gather per-repo metrics (stars, forks, issues)
+  daily_summary: true           # Generate reports/<date>.md
+  stats_dashboard: true         # Append to stats/repo-stats.csv
+  profile_readme: true          # Update Param96/Param96 profile README
+  webhook: true                 # Send webhook summary notification
+  health_score: true            # Compute per-repo health score (0-100)
+  weekly_digest: true           # Aggregate weekly digest on configured day
+  weekly_digest_day: 1          # 1=Monday, 0=Sunday, 2=Tuesday, etc.
+  changelog: false              # Auto-generate CHANGELOG.md from conventional commits [writes]
+  dashboard_svg: true           # Generate cross-repo HTML/SVG dashboard
+
+# ─────────────────────────────────────────────
+# Notifications
+# ─────────────────────────────────────────────
+notifications:
+  enabled: true
+  # Critical events (exposed secrets, broken CI, failed revert) → immediate ping
+  # Routine events (formatting, stats) → batched into daily digest only
+  critical_webhook: true        # Send immediate webhook for critical events
+  routine_digest_only: true     # Batch routine events into digest (no immediate ping)

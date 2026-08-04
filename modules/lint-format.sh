@@ -90,8 +90,8 @@ run_lint_format() {
     fi
   fi
 
-  # Commit & push any changes, log to summary
-  if commit_and_push "fix: automated lint/format fixes"; then
+  # Commit & push any changes, log to summary (safe — formatting only)
+  if commit_and_push_safe "fix: automated lint/format fixes"; then
     log_info "Automated lint/format fixes pushed for ${repo_name}"
     log_summary "$repo_name" "lint-format" "fixed" "Applied automated lint/format fixes"
   else

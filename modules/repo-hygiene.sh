@@ -258,6 +258,120 @@ except Exception:
     fi
   fi
 
+  # ----------------------------------------------------------------
+  # Feature 5: hygiene.branch_protection — Audit branch protection rules
+  # ----------------------------------------------------------------
+  if [[ "$(cfg_get "hygiene.branch_protection")" != "false" ]]; then
+    local gh_user="${GH_USER:-}"
+    if [[ -n "$gh_user" ]]; then
+      log_info "Auditing branch protection for ${repo_name}..."
+      api_throttle
+
+      # Get default branch
+      local default_branch
+      default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+
+      local protection_json
+      protection_json=$(gh api "repos/${gh_user}/${repo_name}/branches/${default_branch}/protection" 2>/dev/null || echo "NONE")
+
+      if [[ "$protection_json" == "NONE" || -z "$protection_json" ]]; then
+        log_warn "No branch protection rules found for ${repo_name}/${default_branch}"
+        log_summary "$repo_name" "hygiene" "branch_protection" "WARNING: No branch protection on ${default_branch}"
+      else
+        # Check against baseline policy
+        local drift_issues
+        drift_issues=$(python3 - "$protection_json" << 'PYEOF' 2>/dev/null || echo "parse_error"
+import sys, json
+
+try:
+    data = json.loads(sys.argv[1])
+except Exception:
+    print("parse_error")
+    sys.exit(0)
+
+drifts = []
+
+# Check: require PR reviews >= 1
+pr_reviews = data.get('required_pull_request_reviews', None)
+if pr_reviews is None:
+    drifts.append('PR reviews not required')
+else:
+    count = pr_reviews.get('required_approving_review_count', 0)
+    if count < 1:
+        drifts.append(f'PR reviews required but count={count} (baseline: >=1)')
+
+# Check: require status checks
+status_checks = data.get('required_status_checks', None)
+if status_checks is None:
+    drifts.append('Status checks not required')
+
+# Check: no force push
+enforce_admins = data.get('enforce_admins', {})
+allow_force_push = data.get('allow_force_pushes', {})
+if allow_force_push and allow_force_push.get('enabled', False):
+    drifts.append('Force push is allowed (baseline: disabled)')
+
+# Check: no deletions
+allow_deletions = data.get('allow_deletions', {})
+if allow_deletions and allow_deletions.get('enabled', False):
+    drifts.append('Branch deletion is allowed (baseline: disabled)')
+
+if drifts:
+    print('DRIFT:' + '|'.join(drifts))
+else:
+    print('OK')
+PYEOF
+)
+
+        if [[ "$drift_issues" == DRIFT:* ]]; then
+          local drift_list="${drift_issues#DRIFT:}"
+          local drift_formatted
+          drift_formatted=$(echo "$drift_list" | tr '|' '; ')
+          log_warn "Branch protection drift in ${repo_name}: ${drift_formatted}"
+          log_summary "$repo_name" "hygiene" "branch_protection" "WARNING: Protection drift on ${default_branch}: ${drift_formatted}"
+        elif [[ "$drift_issues" == "OK" ]]; then
+          log_info "Branch protection meets baseline for ${repo_name}"
+          log_summary "$repo_name" "hygiene" "branch_protection" "Branch protection meets baseline policy"
+        else
+          log_info "Could not parse branch protection for ${repo_name}"
+          log_summary "$repo_name" "hygiene" "branch_protection" "Could not parse protection rules"
+        fi
+      fi
+    fi
+  fi
+
+  # ----------------------------------------------------------------
+  # Feature 6: hygiene.orphaned_repos — Flag repos with no recent commits
+  # ----------------------------------------------------------------
+  if [[ "$(cfg_get "hygiene.orphaned_repos")" != "false" ]]; then
+    local orphan_months
+    orphan_months=$(cfg_get "hygiene.orphan_months")
+    [[ -z "$orphan_months" || "$orphan_months" == "true" ]] && orphan_months=6
+
+    log_info "Checking for repo inactivity (orphan threshold: ${orphan_months} months)..."
+    local last_commit_date
+    last_commit_date=$(git log -1 --format='%ci' 2>/dev/null | cut -d' ' -f1)
+
+    if [[ -n "$last_commit_date" ]]; then
+      local is_orphan
+      is_orphan=$(python3 -c "
+from datetime import datetime, timedelta
+import sys
+last = datetime.strptime('$last_commit_date', '%Y-%m-%d')
+threshold = datetime.utcnow() - timedelta(days=$orphan_months * 30)
+print('true' if last < threshold else 'false')
+" 2>/dev/null || echo "false")
+
+      if [[ "$is_orphan" == "true" ]]; then
+        log_warn "${repo_name} appears orphaned — last commit: ${last_commit_date} (>${orphan_months} months ago)"
+        log_summary "$repo_name" "hygiene" "orphaned_repo" "WARNING: No commits since ${last_commit_date} (>${orphan_months} months). Consider archiving."
+      else
+        log_info "${repo_name} is active — last commit: ${last_commit_date}"
+        log_summary "$repo_name" "hygiene" "orphaned_repo" "Active — last commit: ${last_commit_date}"
+      fi
+    fi
+  fi
+
   cd "$orig_dir" || true
   return 0
 }

@@ -37,9 +37,23 @@ run_code_quality() {
     if command -v autoflake &>/dev/null && find . -type f -name "*.py" -not -path "*/.*" | grep -q .; then
       log_info "Running autoflake..."
       autoflake --in-place --remove-all-unused-imports --remove-unused-variables -r . || true
-      if commit_and_push "fix: remove unused imports and variables"; then
-        log_info "autoflake: removed unused imports and variables"
-        log_summary "$repo_name" "quality" "autoflake" "Removed unused imports and variables"
+
+      local pr_mode
+      pr_mode=$(cfg_get "quality.autoflake_pr_mode")
+      if [[ "$pr_mode" == "true" ]]; then
+        git add -A
+        local preview
+        preview=$(diff_preview 150)
+        local pr_body
+        pr_body=$(printf '## Autoflake: Remove unused imports and variables\n\nAutomated cleanup by daily-bot. Please review carefully — dynamic imports (e.g. via `getattr`, `importlib`, `__all__`) may be incorrectly removed.\n\n### Changes\n\n%s' "$preview")
+        if propose_as_pr "$repo_name" "autoflake" "fix: remove unused imports and variables" "$pr_body"; then
+          log_summary "$repo_name" "quality" "autoflake" "Proposed unused import removal as PR"
+        fi
+      else
+        if commit_and_push "fix: remove unused imports and variables"; then
+          log_info "autoflake: removed unused imports and variables"
+          log_summary "$repo_name" "quality" "autoflake" "Removed unused imports and variables"
+        fi
       fi
     fi
   fi
@@ -140,6 +154,119 @@ run_code_quality() {
           log_summary "$repo_name" "quality" "yaml_lint" "All ${#yaml_files[@]} YAML file(s) valid"
         fi
       fi
+    fi
+  fi
+  # 7. quality.depcheck — Find unused dependencies in JS/TS projects
+  if [[ "$(cfg_get "quality.depcheck")" == "true" ]]; then
+    if [[ -f "package.json" ]] && command -v npx &>/dev/null; then
+      log_info "Running depcheck for ${repo_name}..."
+      local depcheck_output
+      depcheck_output=$(npx --yes depcheck --json 2>/dev/null || true)
+      if [[ -n "$depcheck_output" && "$depcheck_output" != "{}" ]]; then
+        local unused_deps missing_deps
+        unused_deps=$(echo "$depcheck_output" | python3 -c "
+import sys, json
+try:
+    d = json.loads(sys.stdin.read())
+    deps = d.get('dependencies', []) + d.get('devDependencies', [])
+    print(len(deps))
+except: print(0)
+" 2>/dev/null || echo "0")
+        missing_deps=$(echo "$depcheck_output" | python3 -c "
+import sys, json
+try:
+    d = json.loads(sys.stdin.read())
+    print(len(d.get('missing', {})))
+except: print(0)
+" 2>/dev/null || echo "0")
+        if [[ "$unused_deps" -gt 0 || "$missing_deps" -gt 0 ]]; then
+          log_info "depcheck: ${unused_deps} unused deps, ${missing_deps} missing deps in ${repo_name}"
+          log_summary "$repo_name" "quality" "depcheck" "Unused: ${unused_deps}, Missing: ${missing_deps}"
+        else
+          log_summary "$repo_name" "quality" "depcheck" "No unused or missing dependencies"
+        fi
+      fi
+    fi
+  fi
+
+  # 8. quality.vulture — Find unused Python code (functions, variables, imports)
+  if [[ "$(cfg_get "quality.vulture")" == "true" ]]; then
+    if command -v vulture &>/dev/null && find . -type f -name "*.py" -not -path "*/.*" | grep -q .; then
+      log_info "Running vulture for ${repo_name}..."
+      local vulture_output
+      vulture_output=$(vulture . --min-confidence 80 2>&1 || true)
+      local dead_code_count=0
+      if [[ -n "$vulture_output" ]]; then
+        dead_code_count=$(echo "$vulture_output" | grep -v '^\s*$' | wc -l | tr -d ' ')
+      fi
+      if [[ "$dead_code_count" -gt 0 ]]; then
+        log_info "vulture: found ${dead_code_count} dead code item(s) in ${repo_name}"
+        log_summary "$repo_name" "quality" "vulture" "Found ${dead_code_count} dead code item(s)"
+      else
+        log_summary "$repo_name" "quality" "vulture" "No dead code detected"
+      fi
+    fi
+  fi
+
+  # 9. quality.radon — Python cyclomatic complexity analysis
+  if [[ "$(cfg_get "quality.radon")" == "true" ]]; then
+    if command -v radon &>/dev/null && find . -type f -name "*.py" -not -path "*/.*" | grep -q .; then
+      log_info "Running radon complexity analysis for ${repo_name}..."
+      local radon_output radon_avg
+      radon_output=$(radon cc . -a -nc 2>&1 || true)
+      radon_avg=$(echo "$radon_output" | grep -i 'average complexity' | tail -1 | grep -oE '[0-9]+\.?[0-9]*' | head -1 || echo "0")
+      local high_complexity
+      high_complexity=$(echo "$radon_output" | grep -cE ' [CDEF] \(' || echo "0")
+      log_info "radon: avg complexity=${radon_avg}, high-complexity functions=${high_complexity}"
+      log_summary "$repo_name" "quality" "radon" "Avg complexity: ${radon_avg}, High-complexity (C-F): ${high_complexity}"
+
+      # Append to per-run metrics for trend tracking
+      local today
+      today=$(date -u +'%Y-%m-%d')
+      local metrics_file="${WORKDIR:-/tmp}/quality-metrics.csv"
+      echo "${today},${repo_name},complexity,${radon_avg},${high_complexity}" >> "$metrics_file"
+    fi
+  fi
+
+  # 10. quality.jscpd — Code duplication detection
+  if [[ "$(cfg_get "quality.jscpd")" == "true" ]]; then
+    if command -v npx &>/dev/null; then
+      log_info "Running jscpd duplication detection for ${repo_name}..."
+      local jscpd_output jscpd_json
+      jscpd_json=$(mktemp)
+      npx --yes jscpd . --reporters json --output "$jscpd_json" --silent 2>/dev/null || true
+
+      local dup_percentage="0" dup_clones="0"
+      if [[ -f "${jscpd_json}/jscpd-report.json" ]]; then
+        dup_percentage=$(python3 -c "
+import json
+try:
+    with open('${jscpd_json}/jscpd-report.json') as f:
+        d = json.load(f)
+    stats = d.get('statistics', {})
+    total = stats.get('total', {})
+    print(round(total.get('percentage', 0), 2))
+except: print(0)
+" 2>/dev/null || echo "0")
+        dup_clones=$(python3 -c "
+import json
+try:
+    with open('${jscpd_json}/jscpd-report.json') as f:
+        d = json.load(f)
+    print(len(d.get('duplicates', [])))
+except: print(0)
+" 2>/dev/null || echo "0")
+      fi
+      rm -rf "$jscpd_json"
+
+      log_info "jscpd: ${dup_percentage}% duplication, ${dup_clones} clone(s) in ${repo_name}"
+      log_summary "$repo_name" "quality" "jscpd" "Duplication: ${dup_percentage}%, Clones: ${dup_clones}"
+
+      # Append to per-run metrics for trend tracking
+      local today
+      today=$(date -u +'%Y-%m-%d')
+      local metrics_file="${WORKDIR:-/tmp}/quality-metrics.csv"
+      echo "${today},${repo_name},duplication,${dup_percentage},${dup_clones}" >> "$metrics_file"
     fi
   fi
 
