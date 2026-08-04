@@ -89,8 +89,8 @@ jobs:
         if: always()
         run: |
           cd ${{ github.workspace }}
-          git config user.name "daily-maintenance-bot"
-          git config user.email "actions@users.noreply.github.com"
+          git config user.name "Param96"
+          git config user.email "paramppatel100@gmail.com"
           git add reports/ stats/ || true
           if ! git diff --cached --quiet; then
             git commit -m "chore: daily reports $(date -u +'%Y-%m-%d')"
