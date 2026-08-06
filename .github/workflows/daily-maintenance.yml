@@ -76,7 +76,7 @@ jobs:
           sudo chmod +x /usr/local/bin/yq
 
           # trivy — vulnerability scanner for containers and filesystems
-          TRIVY_VERSION="0.52.0"
+          TRIVY_VERSION="0.73.0"
           wget -qO- "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
             | sudo tar xz -C /usr/local/bin trivy
 
