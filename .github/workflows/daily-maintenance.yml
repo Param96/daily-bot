@@ -22,6 +22,11 @@ jobs:
         with:
           token: ${{ secrets.PAT_TOKEN }}
 
+      - name: Configure git identity
+        run: |
+          git config --global user.name "Param96"
+          git config --global user.email "paramppatel100@gmail.com"
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -106,8 +111,6 @@ jobs:
         if: always()
         run: |
           cd ${{ github.workspace }}
-          git config user.name "Param96"
-          git config user.email "paramppatel100@gmail.com"
           git add reports/ stats/ || true
           if ! git diff --cached --quiet; then
             git commit -m "chore: daily reports $(date -u +'%Y-%m-%d')"

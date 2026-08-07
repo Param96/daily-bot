@@ -68,9 +68,13 @@ commit_and_push() {
   if git diff --cached --quiet; then
     return 1
   fi
-  git -c user.name="Param96" \
-      -c user.email="paramppatel100@gmail.com" \
-      commit -m "$msg" -q
+  # Identity is set via git config --global in the workflow.
+  # Using GIT_AUTHOR_* and GIT_COMMITTER_* ensures both match the GitHub account.
+  GIT_AUTHOR_NAME="Param96" \
+  GIT_AUTHOR_EMAIL="paramppatel100@gmail.com" \
+  GIT_COMMITTER_NAME="Param96" \
+  GIT_COMMITTER_EMAIL="paramppatel100@gmail.com" \
+  git commit -m "$msg" -q
   if [[ "$DRY_RUN" == "true" ]]; then
     echo "  [dry-run] would push: $msg"
   else
@@ -150,9 +154,11 @@ propose_as_pr() {
     git checkout -b "$branch_name" -q
   }
 
-  git -c user.name="Param96" \
-      -c user.email="paramppatel100@gmail.com" \
-      commit -m "$pr_title" -q
+  GIT_AUTHOR_NAME="Param96" \
+  GIT_AUTHOR_EMAIL="paramppatel100@gmail.com" \
+  GIT_COMMITTER_NAME="Param96" \
+  GIT_COMMITTER_EMAIL="paramppatel100@gmail.com" \
+  git commit -m "$pr_title" -q
 
   git push -u origin "$branch_name" -q 2>/dev/null || {
     log_error "Failed to push branch ${branch_name} for ${repo_name}"
