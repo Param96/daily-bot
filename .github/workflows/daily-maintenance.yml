@@ -2,8 +2,8 @@ name: Daily Repo Maintenance
 
 on:
   schedule:
-    # 03:00 UTC = 08:30 IST
-    - cron: '0 3 * * *'
+    # 03:17 UTC = 08:47 IST (Off-peak minute to avoid GitHub Actions queue delays)
+    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -24,8 +24,8 @@ jobs:
 
       - name: Configure git identity
         run: |
-          git config --global user.name "Param96"
-          git config --global user.email "paramppatel100@gmail.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Set up Node
         uses: actions/setup-node@v4
