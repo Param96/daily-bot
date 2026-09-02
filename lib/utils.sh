@@ -453,6 +453,7 @@ fetch_repo_meta() {
     stars: .stargazers_count,
     forks: .forks_count,
     open_issues: .open_issues_count,
+    language: (.language // "Unknown"),
     description: (.description // ""),
     topics: (.topics // []),
     has_license: (.license != null),

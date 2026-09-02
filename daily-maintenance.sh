@@ -109,7 +109,16 @@ process_repo() {
   # 6. Repo Hygiene (stale cleanup)
   run_repo_hygiene "$repo" "$repo_dir" || true
 
-  # 7. Per-repo stats collection for reporting
+  # 7. Auto-deploy docs
+  run_docs "$repo" "$repo_dir" || true
+
+  # 8. Backup repository
+  run_backup "$repo" "$repo_dir" || true
+
+  # 9. Automated Issue Generator
+  run_issue_generator "$repo" "$repo_dir" || true
+
+  # 10. Per-repo stats collection for reporting
   run_reporting_per_repo "$repo" "$repo_dir" || true
 
   # ---- Fallback: genuine log entry if nothing else changed ----
@@ -152,6 +161,7 @@ if command -v parallel &>/dev/null && [[ "$PARALLEL_WORKERS" -gt 1 ]]; then
   export -f process_repo is_excluded run_lint_format run_security \
     run_repo_hygiene run_code_quality run_reporting_per_repo \
     run_rollback run_test_build run_dependency_update \
+    run_docs run_backup run_issue_generator \
     commit_and_push commit_and_push_safe propose_as_pr diff_preview \
     check_ci_status rollback_commit api_throttle gh_api_safe \
     cfg_get _yaml_read module_enabled \

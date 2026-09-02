@@ -42,16 +42,18 @@ run_reporting_per_repo() {
     meta_json=$(fetch_repo_meta "$gh_user" "$repo_name" 2>/dev/null || echo "")
   fi
 
-  local stars=0 forks=0 open_issues=0
+  local stars=0 forks=0 open_issues=0 language="Unknown"
   if [[ -n "$meta_json" ]]; then
     if command -v jq &>/dev/null; then
       stars=$(echo "$meta_json" | jq -r '.stars // 0' 2>/dev/null || echo 0)
       forks=$(echo "$meta_json" | jq -r '.forks // 0' 2>/dev/null || echo 0)
       open_issues=$(echo "$meta_json" | jq -r '.open_issues // 0' 2>/dev/null || echo 0)
+      language=$(echo "$meta_json" | jq -r '.language // "Unknown"' 2>/dev/null || echo "Unknown")
     elif command -v python3 &>/dev/null; then
       stars=$(python3 -c "import sys, json; print(json.loads(sys.stdin.read()).get('stars', 0))" <<< "$meta_json" 2>/dev/null || echo 0)
       forks=$(python3 -c "import sys, json; print(json.loads(sys.stdin.read()).get('forks', 0))" <<< "$meta_json" 2>/dev/null || echo 0)
       open_issues=$(python3 -c "import sys, json; print(json.loads(sys.stdin.read()).get('open_issues', 0))" <<< "$meta_json" 2>/dev/null || echo 0)
+      language=$(python3 -c "import sys, json; print(json.loads(sys.stdin.read()).get('language', 'Unknown'))" <<< "$meta_json" 2>/dev/null || echo "Unknown")
     fi
   fi
 
@@ -96,9 +98,9 @@ run_reporting_per_repo() {
     fi
   fi
 
-  # Append CSV row: date,repo,stars,forks,open_issues,health_score
+  # Append CSV row: date,repo,stars,forks,open_issues,health_score,language
   mkdir -p "$work_dir"
-  echo "${today},${repo_name},${stars},${forks},${open_issues},${health_score}" >> "${work_dir}/repo-stats-today.csv"
+  echo "${today},${repo_name},${stars},${forks},${open_issues},${health_score},${language}" >> "${work_dir}/repo-stats-today.csv"
 
   log_summary "$repo_name" "reporting" "collect_stats" "stars=${stars}, forks=${forks}, open_issues=${open_issues}, health=${health_score}"
 }
@@ -461,7 +463,7 @@ _reporting_update_stats_dashboard() {
   log_info "Updating stats dashboard at stats/repo-stats.csv"
   mkdir -p "$stats_dir"
   if [[ ! -f "$stats_csv" ]]; then
-    echo "date,repo,stars,forks,open_issues,health_score" > "$stats_csv"
+    echo "date,repo,stars,forks,open_issues,health_score,language" > "$stats_csv"
   fi
 
   cat "$today_csv" >> "$stats_csv"
@@ -517,6 +519,7 @@ csv_path = sys.argv[5]
 readme_path = sys.argv[6]
 
 repos = []
+languages = {}
 if os.path.exists(csv_path):
     try:
         with open(csv_path, 'r', encoding='utf-8') as f:
@@ -525,13 +528,17 @@ if os.path.exists(csv_path):
                 if len(row) >= 6:
                     try:
                         health = int(row[5]) if row[5] != '-' else 0
+                        lang = row[6] if len(row) >= 7 and row[6] else "Unknown"
                         repos.append({
                             'name': row[1],
                             'stars': int(row[2]),
                             'forks': int(row[3]),
                             'issues': int(row[4]),
-                            'health': health
+                            'health': health,
+                            'language': lang
                         })
+                        if lang != "Unknown" and lang != "null":
+                            languages[lang] = languages.get(lang, 0) + 1
                     except ValueError:
                         pass
     except Exception:
@@ -539,6 +546,7 @@ if os.path.exists(csv_path):
 
 repos.sort(key=lambda x: x['stars'], reverse=True)
 top_repos = repos[:5]
+top_languages = sorted(languages.items(), key=lambda x: x[1], reverse=True)[:5]
 
 # Health score bar using Unicode blocks
 def health_bar(score):
@@ -553,13 +561,21 @@ def health_emoji(score):
 
 avg_health = sum(r['health'] for r in repos) // max(len(repos), 1) if repos else 0
 
+health_color = "success" if avg_health >= 90 else "yellow" if avg_health >= 70 else "orange" if avg_health >= 50 else "red"
+today_badge = today.replace('-', '--')
+
 stats_block = []
 stats_block.append("<!-- DAILY-BOT:START -->")
+stats_block.append("<div align=\"center\">")
+stats_block.append("")
 stats_block.append("### 🤖 Daily Maintenance Stats")
-stats_block.append(f"- **Last Run:** {today}")
-stats_block.append(f"- **Total Repos Maintained:** {total_repos}")
-stats_block.append(f"- **Today's Fixes:** {total_fixes}")
-stats_block.append(f"- **Average Health Score:** {health_emoji(avg_health)} {avg_health}/100")
+stats_block.append("")
+stats_block.append(f"<p>")
+stats_block.append(f"  <img src=\"https://img.shields.io/badge/Last%20Run-{today_badge}-blue\" alt=\"Last Run\" />")
+stats_block.append(f"  <img src=\"https://img.shields.io/badge/Repos%20Maintained-{total_repos}-brightgreen\" alt=\"Repos Maintained\" />")
+stats_block.append(f"  <img src=\"https://img.shields.io/badge/Fixes%20Today-{total_fixes}-orange\" alt=\"Fixes\" />")
+stats_block.append(f"  <img src=\"https://img.shields.io/badge/Health-{avg_health}%2F100-{health_color}\" alt=\"Health\" />")
+stats_block.append(f"</p>")
 stats_block.append("")
 stats_block.append("#### Top Repositories")
 if top_repos:
@@ -571,7 +587,20 @@ if top_repos:
         h = r['health']
         stats_block.append(f"| [{name}]({url}) | {r['stars']} | {r['forks']} | {r['issues']} | {health_emoji(h)} {health_bar(h)} {h} |")
 else:
-    stats_block.append("No repository stats available.")
+    stats_block.append("*> No repository stats available yet.*")
+stats_block.append("")
+
+if top_languages:
+    stats_block.append("#### 🌐 Top Languages")
+    stats_block.append(f"<p>")
+    for lang, count in top_languages:
+        lang_badge = lang.replace('-', '--').replace(' ', '%20')
+        stats_block.append(f"  <img src=\"https://img.shields.io/badge/{lang_badge}-{count}%20repos-blue\" alt=\"{lang}\" />")
+    stats_block.append(f"</p>")
+    stats_block.append("")
+stats_block.append(f"<sub>*Automated by [daily-bot](https://github.com/{gh_user}/daily-bot)*</sub>")
+stats_block.append("")
+stats_block.append("</div>")
 stats_block.append("<!-- DAILY-BOT:END -->")
 
 new_section = "\n".join(stats_block)

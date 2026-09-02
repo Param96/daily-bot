@@ -232,6 +232,31 @@ else:
     fi
   fi
 
+  # 3. Auto-merge Dependabot PRs
+  if [[ "$(cfg_get "dependencies.auto_merge_dependabot")" == "true" ]]; then
+    if command -v gh &>/dev/null; then
+      log_info "Checking for open dependabot PRs..."
+      local pr_list
+      pr_list=$(gh pr list --state open --author "app/dependabot" --json number --jq '.[].number' 2>/dev/null || echo "")
+      for pr_num in $pr_list; do
+        log_info "Checking CI status for PR #$pr_num..."
+        local ci_status
+        ci_status=$(gh pr checks "$pr_num" --json state --jq 'if length == 0 then "fail" elif all(.state == "SUCCESS") then "pass" else "fail" end' 2>/dev/null || echo "fail")
+        if [[ "$ci_status" == "pass" ]]; then
+          log_info "CI passed for PR #$pr_num. Auto-merging..."
+          if gh pr merge "$pr_num" --auto --squash 2>/dev/null; then
+            log_summary "$repo_name" "dependency-update" "auto-merge" "Auto-merged dependabot PR #$pr_num"
+          else
+            log_warn "Failed to auto-merge PR #$pr_num"
+            log_summary "$repo_name" "dependency-update" "error" "Failed to auto-merge dependabot PR #$pr_num"
+          fi
+        else
+          log_info "CI not fully passing for PR #$pr_num. Skipping auto-merge."
+        fi
+      done
+    fi
+  fi
+
   cd "$orig_pwd" || true
   return 0
 }

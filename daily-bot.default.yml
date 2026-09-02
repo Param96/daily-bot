@@ -70,6 +70,7 @@ dependencies:
   enabled: false                # Master toggle [default off — opens PRs]
   npm_update: true              # Check for outdated npm packages
   pip_update: true              # Check for outdated pip packages
+  auto_merge_dependabot: false  # Auto-merge green Dependabot PRs
 
 # ─────────────────────────────────────────────
 # Rollback  (auto-revert bot commits that break CI)
@@ -101,6 +102,28 @@ reporting:
   weekly_digest_day: 1          # 1=Monday, 0=Sunday, 2=Tuesday, etc.
   changelog: false              # Auto-generate CHANGELOG.md from conventional commits [writes]
   dashboard_svg: true           # Generate cross-repo HTML/SVG dashboard
+  language_analytics: true      # Fetch repo language and show breakdown in profile
+
+# ─────────────────────────────────────────────
+# Backup
+# ─────────────────────────────────────────────
+backup:
+  enabled: false                # Zip repo and copy to destination
+  destination: "~/backups"      # Local directory or s3:// bucket
+
+# ─────────────────────────────────────────────
+# Documentation Auto-Deploy
+# ─────────────────────────────────────────────
+docs:
+  enabled: false                # Auto-build and deploy docs
+  deploy_gh_pages: true         # Push to gh-pages branch
+
+# ─────────────────────────────────────────────
+# Automated Issue Generator
+# ─────────────────────────────────────────────
+issues:
+  enabled: false                # Create issues for errors/warnings
+  auto_create_from_errors: true # Read summary.json and create issues
 
 # ─────────────────────────────────────────────
 # Notifications
