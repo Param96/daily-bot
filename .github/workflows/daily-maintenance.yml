@@ -2,8 +2,8 @@ name: Daily Repo Maintenance
 
 on:
   schedule:
-    # 03:17 UTC = 08:47 IST (Off-peak minute to avoid GitHub Actions queue delays)
-    - cron: '17 3 * * *'
+    # Run 12 times a day (every 2 hours at minute 17)
+    - cron: '17 */2 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
