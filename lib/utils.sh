@@ -78,7 +78,11 @@ commit_and_push() {
   if [[ "$DRY_RUN" == "true" ]]; then
     echo "  [dry-run] would push: $msg"
   else
-    git push -q
+    if ! git push -q; then
+      log_error "Failed to push maintenance commit: $msg"
+      log_summary "$(basename "$PWD")" "git" "error" "Failed to push maintenance commit"
+      return 1
+    fi
   fi
   TOTAL_FIXES=$((TOTAL_FIXES + 1))
   return 0
@@ -334,6 +338,7 @@ _REPO_CFG_MALFORMED=""
 # Usage: cfg_get "lint.eslint" => "true"
 cfg_get() {
   local key="$1"
+  local fallback="${2-true}"
   local repo_cfg=".daily-bot.yml"
   local default_cfg="${SCRIPT_DIR}/daily-bot.default.yml"
   local val=""
@@ -354,7 +359,7 @@ cfg_get() {
     val=$(_yaml_read "$default_cfg" "$key")
   fi
   # Ultimate fallback
-  echo "${val:-true}"
+  echo "${val:-$fallback}"
 }
 
 # Reset per-repo config state (called at start of each repo processing)
@@ -367,7 +372,7 @@ _yaml_read() {
   local file="$1" key="$2"
   # Prefer yq if available
   if command -v yq &>/dev/null; then
-    yq -r ".$key // empty" "$file" 2>/dev/null
+    yq -r ".$key | select(tag != \"!!null\")" "$file" 2>/dev/null
     return
   fi
   # Fallback: python3 + PyYAML
@@ -379,7 +384,7 @@ with open('$file') as f:
 keys = '$key'.split('.')
 val = functools.reduce(lambda c, k: (c or {}).get(k), keys, d)
 if val is not None:
-    print(val)
+    print(str(val).lower() if isinstance(val, bool) else val)
 " 2>/dev/null
     return
   fi

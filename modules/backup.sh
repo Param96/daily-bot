@@ -12,12 +12,28 @@ run_backup() {
   fi
 
   local dest
-  dest=$(cfg_get "backup.destination")
+  dest=$(cfg_get "backup.destination" "")
   if [[ -z "$dest" ]]; then
     dest="${HOME}/backups/daily-bot"
   fi
   # resolve tilde if needed
   dest="${dest/#\~/$HOME}"
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    log_info "[dry-run] would back up $repo_name to $dest"
+    return 0
+  fi
+
+  # Backups must stay outside git working trees: later modules stage all files.
+  if [[ "$dest" != s3://* ]]; then
+    mkdir -p "$dest" || return 1
+    dest=$(cd "$dest" && pwd -P) || return 1
+    if git -C "$dest" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      log_error "backup: destination must be outside a git working tree: $dest"
+      log_summary "$repo_name" "backup" "error" "Backup destination is inside a git working tree"
+      return 1
+    fi
+  fi
 
   log_info "Running backup for $repo_name to $dest..."
   

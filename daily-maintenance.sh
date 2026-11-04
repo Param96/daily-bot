@@ -35,10 +35,10 @@ export GH_TOKEN="${GH_TOKEN:?GH_TOKEN not set}"
 export DRY_RUN="${DRY_RUN:-false}"
 export WEBHOOK_URL="${WEBHOOK_URL:-}"
 export WORKDIR
-WORKDIR="$(mktemp -d)"
+WORKDIR="${WORKDIR:-$(mktemp -d)}"
 export SCRIPT_DIR
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-EXCLUDE_FILE="${SCRIPT_DIR}/exclude.txt"
+export EXCLUDE_FILE="${EXCLUDE_FILE:-${SCRIPT_DIR}/exclude.txt}"
 PARALLEL_WORKERS="${PARALLEL_WORKERS:-4}"
 
 # ---- Source shared utilities ----
@@ -133,6 +133,13 @@ process_repo() {
 
 # ---- Main ----
 
+# Each parallel worker loads the same utilities and modules as the main process.
+# This avoids incomplete function exports and preserves private helper dependencies.
+if [[ "${1:-}" == "--worker" ]]; then
+  process_repo "${2:?Repository name required}"
+  exit 0
+fi
+
 echo "====================================================="
 echo "== Daily maintenance run for ${GH_USER}"
 echo "== $(date -u +'%Y-%m-%d %H:%M UTC')"
@@ -158,8 +165,8 @@ if command -v parallel &>/dev/null && [[ "$PARALLEL_WORKERS" -gt 1 ]]; then
     echo "-- Rate limit low (${local_remaining} remaining), reducing to ${PARALLEL_WORKERS} workers"
   fi
   echo "-- Processing in parallel (${PARALLEL_WORKERS} workers)"
-  export -f _compute_health_score _get_python _has_eslint_config _has_npm_build_script _has_npm_test_script _has_prettier_config _has_pytest_config_or_tests _reporting_generate_daily_summary _reporting_generate_dashboard _reporting_send_webhook _reporting_send_weekly_digest _reporting_update_profile_readme _reporting_update_stats_dashboard _run_with_timeout _yaml_read _yaml_read_safe api_throttle cfg_get check_ci_status commit_and_push commit_and_push_safe diff_preview fetch_all_repos fetch_repo_meta gh_api_safe init_summary is_excluded log_info log_warn log_error log_summary module_enabled process_repo propose_as_pr queue_routine_notification reset_repo_config rollback_commit run_backup run_code_quality run_dependency_update run_docs run_issue_generator run_lint_format run_repo_hygiene run_reporting run_reporting_final run_reporting_per_repo run_rollback run_security run_test_build send_webhook send_webhook_critical
-  echo "$repos" | parallel -j "$PARALLEL_WORKERS" process_repo
+  export SUMMARY_FILE
+  echo "$repos" | parallel -j "$PARALLEL_WORKERS" bash '"'"${SCRIPT_DIR}/daily-maintenance.sh"'"' --worker {}
 else
   echo "-- Processing sequentially"
   for repo in $repos; do

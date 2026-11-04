@@ -65,7 +65,13 @@ some-client-project
 
 ### 5. Let it run
 
-The workflow runs automatically at **03:00 UTC (08:30 IST)** daily. Or trigger it manually via **Actions → Daily Repo Maintenance → Run workflow**. You can set `dry_run: true` to test safely.
+The workflow runs automatically **every two hours at minute 17 (UTC)**. Or trigger it manually via **Actions → Daily Repo Maintenance → Run workflow**. You can set `dry_run: true` to test safely.
+
+### Troubleshooting authentication failures
+
+If runs work for a while and then fail with `could not read Username` or `Bad credentials`, check the expiration and repository access of your personal access token. Replace **Settings → Secrets and variables → Actions → PAT_TOKEN** with a valid token when needed. Updating a token locally does not update the Actions secret. Fine-grained tokens must include every maintained repository and may require organization approval.
+
+Checkout uses GitHub's built-in token; the next step validates `PAT_TOKEN` before installing tools or modifying repositories. The built-in token cannot replace the personal access token for maintenance across your other repositories.
 
 ## Per-Repo Configuration
 
